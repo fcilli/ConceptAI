@@ -20,7 +20,12 @@ if 'endpoint' in params:
                 settings_data = f.read()
             st.write(json.dumps({"status": "success", "settings": settings_data}))
         else:
-            st.write(json.dumps({"status": "error", "message": "No settings file found"}))
+            # Return a default settings response if file not found
+            st.write(json.dumps({
+                "status": "error", 
+                "message": "No settings file found",
+                "default_settings": "threshold=50\nrefresh_interval=10\nrecurring_data_trigger=70"
+            }))
 
     # Serve the event data
     elif params['endpoint'][0] == 'events':
@@ -68,6 +73,7 @@ else:
             f.write(f"recurring_data_trigger={recurring_data_trigger}\n")
         st.success("Settings saved successfully!")
 
+    # Save the settings to /tmp when button is clicked
     if st.button("Save Settings"):
         save_parameters(threshold, refresh_interval, recurring_data_trigger)
 
