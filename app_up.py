@@ -1,41 +1,45 @@
 import streamlit as st
+import requests
 import pandas as pd
 import plotly.express as px
-import os
+import time
 
-# Use the same /tmp directory as the backend to access files
-UPLOAD_DIR = "/tmp"
+# Backend URL
+BACKEND_URL = "https://conceptai-back.streamlit.app"
 
-# Function to read settings from the backend app
-def read_settings():
-    settings_file = os.path.join(UPLOAD_DIR, "settings.txt")
-    settings = {
-        "threshold": 50,  # Default value
-        "refresh_interval": 10,  # Default value
-        "recurring_data_trigger": 70  # Default value
-    }
+# Function to fetch settings from the backend
+def fetch_settings():
+    url = f"{BACKEND_URL}/?endpoint=settings"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        if data["status"] == "success":
+            settings_data = {}
+            for line in data["settings"].split("\n"):
+                if line:
+                    key, value = line.split("=")
+                    settings_data[key] = int(value)
+            return settings_data
+        else:
+            st.warning(data["message"])
+    else:
+        st.warning("Failed to fetch settings from backend.")
+    return {"threshold": 50, "refresh_interval": 10, "recurring_data_trigger": 70}
 
-    if os.path.exists(settings_file):
-        with open(settings_file, "r") as f:
-            for line in f:
-                key, value = line.strip().split("=")
-                settings[key] = int(value)
-
-    return settings
-
-# Function to load event list from uploaded CSV files
-def load_event_list(module_name):
-    file_path = os.path.join(UPLOAD_DIR, f"{module_name}_events.csv")
-    
-    # If no file exists, show placeholder data
-    if not os.path.exists(file_path):
-        return pd.DataFrame({
-            'Date': ['No Data Available'],
-            'Event': ['No events uploaded yet']
-        })
-
-    # Load data from the uploaded CSV file
-    return pd.read_csv(file_path)
+# Function to fetch event data from the backend
+def fetch_event_data(module):
+    url = f"{BACKEND_URL}/?endpoint=events&module={module}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        try:
+            df = pd.read_csv(pd.compat.StringIO(response.text))
+            return df
+        except:
+            st.warning(f"No event data available for {module}.")
+            return pd.DataFrame({'Date': [], 'Event': []})
+    else:
+        st.warning(f"Failed to fetch event data for {module}.")
+        return pd.DataFrame({'Date': [], 'Event': []})
 
 # Function to create Donut chart
 def create_donut_chart(sources_data):
@@ -55,7 +59,7 @@ def generate_incident_list(event_df):
     incident_df = event_df[event_df['Incident'] == True]
     st.dataframe(incident_df)
 
-# Dashboard for each module (CTI, SIM, M&O, IAM, GRC)
+# Layout for module dashboard (CTI, SIM, M&O, IAM, GRC)
 def module_dashboard(module_name, settings):
     st.title(f"{module_name} Dashboard")
 
@@ -74,7 +78,7 @@ def module_dashboard(module_name, settings):
         create_donut_chart(sources_data)
 
     # Lower Left: Event list
-    event_df = load_event_list(module_name)
+    event_df = fetch_event_data(module_name)
     with col3:
         st.subheader(f"Event List for {module_name}")
         st.dataframe(event_df)
@@ -91,8 +95,11 @@ def module_dashboard(module_name, settings):
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select Dashboard", ["CTI", "SIM", "M&O", "IAM", "GRC"])
 
-# Read settings from backend (saved in /tmp)
-settings = read_settings()
+# Fetch settings from the backend
+settings = fetch_settings()
+
+# Autorefresh every X seconds based on settings
+st_autorefresh(interval=settings["refresh_interval"] * 1000, key="data_refresh")
 
 # Show the selected dashboard
 if page == "CTI":
@@ -105,3 +112,4 @@ elif page == "IAM":
     module_dashboard("IAM", settings)
 elif page == "GRC":
     module_dashboard("GRC", settings)
+
