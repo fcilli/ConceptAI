@@ -1,80 +1,52 @@
 import streamlit as st
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
 import os
-import json
 
-# Use /tmp directory for storage
-UPLOAD_DIR = "/tmp"
+# Authenticate Google Drive
+def authenticate_drive():
+    gauth = GoogleAuth()
+    gauth.LocalWebserverAuth()  # Creates local webserver and automatically handles authentication
+    return GoogleDrive(gauth)
 
-# Ensure the /tmp directory exists
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+# Authenticate Google Drive
+drive = authenticate_drive()
 
-# API Endpoint logic
-params = st.experimental_get_query_params()
-if 'endpoint' in params:
-    # Serve the settings
-    if params['endpoint'][0] == 'settings':
-        settings_file = os.path.join(UPLOAD_DIR, "settings.txt")
-        if os.path.exists(settings_file):
-            with open(settings_file, "r") as f:
-                settings_data = f.read()
-            st.write(json.dumps({"status": "success", "settings": settings_data}))
-        else:
-            # Return a default settings response if file not found
-            st.write(json.dumps({
-                "status": "error", 
-                "message": "No settings file found",
-                "default_settings": "threshold=50\nrefresh_interval=10\nrecurring_data_trigger=70"
-            }))
+# Upload settings to Google Drive
+def upload_to_drive(file_name, file_content):
+    gfile = drive.CreateFile({'title': file_name})
+    gfile.SetContentString(file_content)
+    gfile.Upload()  # Upload the file.
+    st.success(f"{file_name} uploaded successfully to Google Drive!")
 
-    # Serve the event data
-    elif params['endpoint'][0] == 'events':
-        module = params.get('module', [''])[0]
-        event_file = os.path.join(UPLOAD_DIR, f"{module}_events.csv")
-        if os.path.exists(event_file):
-            with open(event_file, "r") as f:
-                st.write(f.read())
-        else:
-            st.write(json.dumps({"status": "error", "message": f"No event file for {module} found"}))
+# Function to handle file uploads to Google Drive
+def upload_file(module_name):
+    st.subheader(f"Upload Event File for {module_name}")
+    uploaded_file = st.file_uploader(f"Choose a CSV file for {module_name}", type="csv")
+    
+    if uploaded_file is not None:
+        # Save the file to Google Drive
+        file_content = uploaded_file.getvalue().decode("utf-8")
+        upload_to_drive(f"{module_name}_events.csv", file_content)
 
-else:
-    # Normal backend functionality for file uploads and parameter setting
+# Upload files for different modules (CTI, SIM, M&O, IAM, GRC)
+for module in ["CTI", "SIM", "M&O", "IAM", "GRC"]:
+    upload_file(module)
 
-    st.title("Backend: File Uploads and Parameter Settings")
+# Save settings
+st.subheader("Set Parameters")
+threshold = st.slider("Incident Threshold", min_value=1, max_value=100, value=50)
+refresh_interval = st.slider("Autorefresh Interval (seconds)", min_value=5, max_value=60, value=10)
+recurring_data_trigger = st.slider("Trigger incidents on recurring data (%)", min_value=1, max_value=100, value=70)
 
-    # Function to handle file uploads
-    def upload_file(module_name):
-        st.subheader(f"Upload Event File for {module_name}")
-        uploaded_file = st.file_uploader(f"Choose a CSV file for {module_name}", type="csv")
-        
-        if uploaded_file is not None:
-            # Save file in /tmp directory
-            file_path = os.path.join(UPLOAD_DIR, f"{module_name}_events.csv")
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            st.success(f"{module_name} event file uploaded successfully!")
-            st.write(f"File temporarily saved at: {file_path}")
+def save_parameters(threshold, refresh_interval, recurring_data_trigger):
+    settings_content = f"threshold={threshold}\nrefresh_interval={refresh_interval}\nrecurring_data_trigger={recurring_data_trigger}"
+    upload_to_drive("settings.txt", settings_content)
 
-    # Upload files for different modules
-    for module in ["CTI", "SIM", "M&O", "IAM", "GRC"]:
-        upload_file(module)
+if st.button("Save Settings"):
+    save_parameters(threshold, refresh_interval, recurring_data_trigger)
 
-    # Save parameters
-    st.subheader("Set Parameters")
-    threshold = st.slider("Incident Threshold", min_value=1, max_value=100, value=50)
-    refresh_interval = st.slider("Autorefresh Interval (seconds)", min_value=5, max_value=60, value=10)
-    recurring_data_trigger = st.slider("Trigger incidents on recurring data (%)", min_value=1, max_value=100, value=70)
+st.markdown("[Go to Main Dashboard](https://conceptai-up.streamlit.app)")
 
-    def save_parameters(threshold, refresh_interval, recurring_data_trigger):
-        settings_file = os.path.join(UPLOAD_DIR, "settings.txt")
-        with open(settings_file, "w") as f:
-            f.write(f"threshold={threshold}\n")
-            f.write(f"refresh_interval={refresh_interval}\n")
-            f.write(f"recurring_data_trigger={recurring_data_trigger}\n")
-        st.success("Settings saved successfully!")
-
-    # Save the settings to /tmp when button is clicked
-    if st.button("Save Settings"):
-        save_parameters(threshold, refresh_interval, recurring_data_trigger)
 
     st.markdown("[Go to Main Dashboard](https://conceptai-up.streamlit.app)")
